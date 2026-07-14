@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Celestial Mechanics - Cinematic Post-Processing Spectrum</title>
+    <title>Celestial Mechanics - World Cup Special Edition</title>
     <style>
         :root {
             --bg-color: #050505;
@@ -195,7 +195,7 @@
 
     <header>
         <h1>Celestial Mechanics</h1>
-        <div class="subtitle">Kinetic Particle Study & Morphing Text Spectrum</div>
+        <div class="subtitle">World Cup Special - Particle Morphing Spectrum</div>
     </header>
 
     <div class="status-panel">
@@ -232,9 +232,13 @@
             bgVisible: false, textMorphFactor: 0, activeHandCount: 0
         };
 
+        // 已成功替換為世界盃主題字庫
         const textLibrary = {
-            1: ["Allen"], 2: ["Jolie"], 3: ["Karis"], 4: ["Liesel"],
-            5: ["Allen", "Jolie", "Karis", "Liesel"] 
+            1: ["世界盃"], 
+            2: ["四強"], 
+            3: ["阿根廷定英格蘭"], 
+            4: ["7月15日晚準時開波!!!"],
+            5: ["世界盃", "四強", "阿根廷定英格蘭", "7月15日晚準時開波!!!"]
         };
 
         const colorPalette = [
@@ -332,7 +336,7 @@
         function updateTextMatrix(textArray) {
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
             textCtx.fillStyle = '#ffffff';
-            textCtx.font = "bold 72px 'Montserrat', sans-serif";
+            textCtx.font = "bold 64px 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif";
             textCtx.textAlign = "center";
             textCtx.textBaseline = "middle";
 
@@ -341,7 +345,8 @@
             } else {
                 const step = 400 / (textArray.length + 1);
                 textArray.forEach((txt, index) => {
-                    textCtx.font = "bold 54px 'Montserrat', sans-serif";
+                    // 長句自動微縮字體，防止世界盃長語句超出邊界
+                    textCtx.font = txt.length > 8 ? "bold 38px 'Montserrat', sans-serif" : "bold 54px 'Montserrat', sans-serif";
                     textCtx.fillText(txt, 256, 60 + step * (index + 1));
                 });
             }
