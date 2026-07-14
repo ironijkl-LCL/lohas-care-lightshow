@@ -220,7 +220,8 @@
 
     <script>
         // --- System Configurations & State ---
-        const PARTICLE_COUNT = 3000; 
+        // 粒子數量已成功修改為 2000
+        const PARTICLE_COUNT = 2000; 
         let baseRadius = 2.5;
         let targetRadius = 2.5;
         
@@ -232,7 +233,7 @@
             bgVisible: false, textMorphFactor: 0, activeHandCount: 0
         };
 
-        // 已成功替換為世界盃主題字庫
+        // 世界盃主題字庫
         const textLibrary = {
             1: ["世界盃"], 
             2: ["四強"], 
@@ -270,9 +271,9 @@
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.z = 7;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // 後期處理會處理鋸齒，關閉原生 antialias 以壓榨效能
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // 鎖定最高像素比為 1.5，防 4K 螢幕掉幀
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
         container.appendChild(renderer.domElement);
 
         // --- 核心技術：建立特效後期處理管線 (Effect Composer) ---
@@ -280,8 +281,6 @@
         const renderPass = new THREE.RenderPass(scene, camera);
         composer.addPass(renderPass);
 
-        // UnrealBloomPass(解析度, 輝光強度, 輝光半徑, 輝光閾值)
-        // 強度設為 1.6，半徑 0.55，閾值 0.15 讓暗處粒子也帶有優雅的微弱光暈
         const bloomPass = new THREE.UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
             1.6,  
@@ -318,7 +317,7 @@
 
         const material = new THREE.PointsMaterial({
             color: colorPalette[state.colorIndex],
-            size: 0.05, // 稍微調大粒子直徑，能反射與匯聚更多 Bloom 特效的光芒
+            size: 0.05, 
             transparent: true,
             opacity: 0.9,
             blending: THREE.AdditiveBlending,
@@ -345,7 +344,6 @@
             } else {
                 const step = 400 / (textArray.length + 1);
                 textArray.forEach((txt, index) => {
-                    // 長句自動微縮字體，防止世界盃長語句超出邊界
                     textCtx.font = txt.length > 8 ? "bold 38px 'Montserrat', sans-serif" : "bold 54px 'Montserrat', sans-serif";
                     textCtx.fillText(txt, 256, 60 + step * (index + 1));
                 });
@@ -507,7 +505,7 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight); // 同步更新後處理管線畫布大小
+            composer.setSize(window.innerWidth, window.innerHeight);
         });
 
         // --- Animation Loop ---
@@ -530,7 +528,7 @@
             
             if (state.colorIndex > 0 && state.colorIndex <= 5 && state.activeHandCount === 1 && !state.isPinching) {
                 state.textMorphFactor += (1.0 - state.textMorphFactor) * 0.08; 
-                particleSystem.rotation.x += (state.targetRotationX * 0.15 - particleSystem.rotation.x) * 0.05; // 稍微降低晃動系數，讓光暈字體更銳利易讀
+                particleSystem.rotation.x += (state.targetRotationX * 0.15 - particleSystem.rotation.x) * 0.05; 
                 particleSystem.rotation.y += (state.targetRotationY * 0.15 - particleSystem.rotation.y) * 0.05;
             } else {
                 state.textMorphFactor += (0.0 - state.textMorphFactor) * 0.08; 
@@ -544,15 +542,13 @@
             
             if (state.isExploded) {
                 state.explosionFactor += delta * 4.0; 
-                bloomPass.strength = 3.5; // 新增：爆炸瞬間將輝光強度飆升到 3.5，製造炫目的衝擊波視覺
+                bloomPass.strength = 3.5; 
             } else {
                 state.explosionFactor += (0 - state.explosionFactor) * 0.08;
-                // 平時輝光隨音樂能量微幅呼吸震盪
                 let currentAudioEnergy = 0;
                 if (isAudioEnabled && audioData) {
                     currentAudioEnergy = audioData[10] / 255; 
                 }
-                // 輝光基底 1.5 + 捏合充能進度 * 1.5 + 音樂鼓點能量 * 0.5
                 bloomPass.strength = 1.5 + (state.chargeProgress * 1.5) + (currentAudioEnergy * 0.5);
             }
 
@@ -585,8 +581,6 @@
             }
             
             posAttr.needsUpdate = true;
-            
-            // --- 核心修改：改用 composer.render() 代替原來的 renderer.render() 輸出畫面 ---
             composer.render();
         }
 
