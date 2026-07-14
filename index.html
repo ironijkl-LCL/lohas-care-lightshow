@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Celestial Mechanics - Optimized Morphing Spectrum</title>
+    <title>Celestial Mechanics - Cinematic Post-Processing Spectrum</title>
     <style>
         :root {
-            --bg-color: #0a0a0a;
+            --bg-color: #050505;
             --ui-color: rgba(255, 255, 255, 0.85);
-            --ui-bg: rgba(15, 15, 15, 0.6);
+            --ui-bg: rgba(10, 10, 10, 0.5);
             --accent: #ffffff;
         }
 
@@ -51,7 +51,7 @@
         }
 
         #webcam-video.visible {
-            opacity: 0.25;
+            opacity: 0.18; /* 降低亮度，讓光暈特效更顯眼 */
         }
 
         header {
@@ -179,6 +179,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Montserrat:wght@500&display=swap" rel="stylesheet">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
@@ -212,47 +219,34 @@
     <div id="canvas-container"></div>
 
     <script>
-        // --- 核心優化：調降粒子數至 3000，完美確保行動端 60FPS 的渲染流暢度 ---
+        // --- System Configurations & State ---
         const PARTICLE_COUNT = 3000; 
         let baseRadius = 2.5;
         let targetRadius = 2.5;
         
         const state = {
-            targetRotationX: 0,
-            targetRotationY: 0,
-            targetPositionX: 0,
-            targetPositionY: 0,
-            colorIndex: 5,
-            chargeProgress: 0,
-            isPinching: false,
-            isExploded: false,
-            explosionFactor: 0,
-            bgVisible: false,
-            textMorphFactor: 0,
-            activeHandCount: 0
+            targetPositionX: 0, targetPositionY: 0,
+            targetRotationX: 0, targetRotationY: 0,
+            colorIndex: 5, chargeProgress: 0,
+            isPinching: false, isExploded: false, explosionFactor: 0,
+            bgVisible: false, textMorphFactor: 0, activeHandCount: 0
         };
 
         const textLibrary = {
-            1: ["Allen"],
-            2: ["Jolie"],
-            3: ["Karis"],
-            4: ["Liesel"],
+            1: ["Allen"], 2: ["Jolie"], 3: ["Karis"], 4: ["Liesel"],
             5: ["Allen", "Jolie", "Karis", "Liesel"] 
         };
 
         const colorPalette = [
-            0xff3b30, // 0 根手指：紅
-            0xff9500, // 1 根手指：橘
-            0xffcc00, // 2 根手指：黃
-            0x34c759, // 3 根手指：綠
-            0x007aff, // 4 根手指：藍
-            0xffffff  // 5 根手指：白
+            0xff2a20, // 0 根手指：極致發光紅
+            0xff9500, // 1 根手指：霓虹橘
+            0xffcc00, // 2 根手指：閃耀黃
+            0x24e059, // 3 根手指：高亮綠
+            0x00aaff, // 4 根手指：量子藍
+            0xffffff  // 5 根手指：星雲白
         ];
 
-        let audioContext = null;
-        let analyser = null;
-        let audioData = null;
-        let isAudioEnabled = false;
+        let audioContext = null; let analyser = null; let audioData = null; let isAudioEnabled = false;
 
         const videoElement = document.getElementById('webcam-video');
         const container = document.getElementById('canvas-container');
@@ -272,11 +266,27 @@
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.z = 7;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // 後期處理會處理鋸齒，關閉原生 antialias 以壓榨效能
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // 鎖定最高像素比為 1.5，防 4K 螢幕掉幀
         container.appendChild(renderer.domElement);
 
+        // --- 核心技術：建立特效後期處理管線 (Effect Composer) ---
+        const composer = new THREE.EffectComposer(renderer);
+        const renderPass = new THREE.RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        // UnrealBloomPass(解析度, 輝光強度, 輝光半徑, 輝光閾值)
+        // 強度設為 1.6，半徑 0.55，閾值 0.15 讓暗處粒子也帶有優雅的微弱光暈
+        const bloomPass = new THREE.UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.6,  
+            0.55, 
+            0.15  
+        );
+        composer.addPass(bloomPass);
+
+        // 初始化粒子幾何與材料
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(PARTICLE_COUNT * 3);
         const originalDirections = new Float32Array(PARTICLE_COUNT * 3);
@@ -293,13 +303,8 @@
             const y = Math.sin(phi) * Math.sin(theta);
             const z = Math.cos(phi);
 
-            originalDirections[i3] = x;
-            originalDirections[i3 + 1] = y;
-            originalDirections[i3 + 2] = z;
-
-            positions[i3] = x * baseRadius;
-            positions[i3 + 1] = y * baseRadius;
-            positions[i3 + 2] = z * baseRadius;
+            originalDirections[i3] = x; originalDirections[i3 + 1] = y; originalDirections[i3 + 2] = z;
+            positions[i3] = x * baseRadius; positions[i3 + 1] = y * baseRadius; positions[i3 + 2] = z * baseRadius;
 
             randomSpeeds[i] = 0.5 + Math.random() * 1.5;
             phaseOffsets[i] = Math.random() * Math.PI * 2;
@@ -309,9 +314,9 @@
 
         const material = new THREE.PointsMaterial({
             color: colorPalette[state.colorIndex],
-            size: 0.04,
+            size: 0.05, // 稍微調大粒子直徑，能反射與匯聚更多 Bloom 特效的光芒
             transparent: true,
-            opacity: 0.85,
+            opacity: 0.9,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         });
@@ -319,16 +324,15 @@
         const particleSystem = new THREE.Points(geometry, material);
         scene.add(particleSystem);
 
-        // --- Canvas 文字矩陣生成器 ---
+        // Canvas 文字點陣化
         const textCanvas = document.createElement('canvas');
         const textCtx = textCanvas.getContext('2d');
-        textCanvas.width = 512;
-        textCanvas.height = 512;
+        textCanvas.width = 512; textCanvas.height = 512;
 
         function updateTextMatrix(textArray) {
             textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
             textCtx.fillStyle = '#ffffff';
-            textCtx.font = "bold 70px 'Montserrat', sans-serif";
+            textCtx.font = "bold 72px 'Montserrat', sans-serif";
             textCtx.textAlign = "center";
             textCtx.textBaseline = "middle";
 
@@ -337,7 +341,7 @@
             } else {
                 const step = 400 / (textArray.length + 1);
                 textArray.forEach((txt, index) => {
-                    textCtx.font = "bold 52px 'Montserrat', sans-serif";
+                    textCtx.font = "bold 54px 'Montserrat', sans-serif";
                     textCtx.fillText(txt, 256, 60 + step * (index + 1));
                 });
             }
@@ -347,66 +351,46 @@
 
             for (let y = 0; y < textCanvas.height; y += 4) {
                 for (let x = 0; x < textCanvas.width; x += 4) {
-                    const alphaIndex = (y * textCanvas.width + x) * 4 + 3;
-                    if (imgData[alphaIndex] > 128) {
-                        const mx = ((x / textCanvas.width) - 0.5) * 8.0;
-                        const my = (((textCanvas.height - y) / textCanvas.height) - 0.5) * 8.0; 
-                        validPoints.push({ x: mx, y: my });
+                    if (imgData[(y * textCanvas.width + x) * 4 + 3] > 128) {
+                        validPoints.push({
+                            x: ((x / textCanvas.width) - 0.5) * 8.2,
+                            y: (((textCanvas.height - y) / textCanvas.height) - 0.5) * 8.2
+                        });
                     }
                 }
             }
 
-            // --- 核心優化：隨機隨機亂數採樣，消除文字聚集時的條紋感與骨架重疊問題 ---
             if (validPoints.length > 0) {
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
                     const i3 = i * 3;
-                    // 改用隨機抽取像素點，讓粒子排布極度均勻且有機化
-                    const randIndex = Math.floor(Math.random() * validPoints.length);
-                    const pt = validPoints[randIndex];
-                    
+                    const pt = validPoints[Math.floor(Math.random() * validPoints.length)];
                     textTargets[i3] = pt.x;
                     textTargets[i3 + 1] = pt.y;
-                    textTargets[i3 + 2] = (Math.random() - 0.5) * 0.2; 
+                    textTargets[i3 + 2] = (Math.random() - 0.5) * 0.25; 
                 }
             }
         }
 
-        // --- 核心優化：預先初始化文字緩衝區，防止首幀向中心 (0,0,0) 崩塌 ---
         updateTextMatrix(textLibrary[5]);
 
-        // --- 核心優化：使用最穩定的全域 Hands 物件，提高跨 CDN 穩定度 ---
+        // MediaPipe Setup
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
         hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.6
+            maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6
         });
-
         hands.onResults(onHandResults);
 
         const cameraCtx = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({ image: videoElement });
-            },
-            width: 640,
-            height: 480
+            onFrame: async () => { await hands.send({ image: videoElement }); },
+            width: 640, height: 480
         });
-        
-        cameraCtx.start().then(() => {
-            loadingEl.style.opacity = 0;
-        });
+        cameraCtx.start().then(() => { loadingEl.style.opacity = 0; });
 
-        function getDistance(pt1, pt2) {
-            return Math.hypot(pt1.x - pt2.x, pt1.y - pt2.y, pt1.z - pt2.z);
-        }
-
-        function checkFingerExtended(tip, pip) {
-            return tip.y < pip.y; 
-        }
+        function getDistance(pt1, pt2) { return Math.hypot(pt1.x - pt2.x, pt1.y - pt2.y, pt1.z - pt2.z); }
+        function checkFingerExtended(tip, pip) { return tip.y < pip.y; }
 
         function onHandResults(results) {
             const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
@@ -414,10 +398,8 @@
 
             if (numHands === 0) {
                 statusGesture.innerText = `Active Mode: Inertial Drift`;
-                state.isPinching = false;
-                state.activeHandCount = 0;
-                handleCharge(false);
-                return;
+                state.isPinching = false; state.activeHandCount = 0;
+                handleCharge(false); return;
             }
 
             const landmarks = results.multiHandLandmarks;
@@ -425,36 +407,21 @@
             
             if (numHands === 2) {
                 statusGesture.innerText = `Active Mode: Bi-Manual Scale`;
-                state.isPinching = false;
-                handleCharge(false);
-
-                const h1_wrist = landmarks[0][0];
-                const h2_wrist = landmarks[1][0];
-                const distance = Math.hypot(h1_wrist.x - h2_wrist.x, h1_wrist.y - h2_wrist.y);
+                state.isPinching = false; handleCharge(false);
+                const distance = Math.hypot(landmarks[0][0].x - landmarks[1][0].x, landmarks[0][0].y - landmarks[1][0].y);
                 targetRadius = THREE.MathUtils.clamp(distance * 7.5, 1.0, 6.0);
             } 
             else if (numHands === 1) {
                 const hand = landmarks[0];
-                const anchor = hand[9]; 
-
-                state.targetPositionX = (anchor.x - 0.5) * -12; 
-                state.targetPositionY = (anchor.y - 0.5) * -8;
+                state.targetPositionX = (hand[9].x - 0.5) * -12; 
+                state.targetPositionY = (hand[9].y - 0.5) * -8;
                 state.targetRotationY = (hand[17].x - hand[5].x) * -10;
                 state.targetRotationX = (hand[17].y - hand[5].y) * 10;
 
-                const thumbTip = hand[4];
-                const indexTip = hand[8];
-                const pinchDist = getDistance(thumbTip, indexTip);
-                const isPinchingNow = pinchDist < 0.045;
+                const isPinchingNow = getDistance(hand[4], hand[8]) < 0.045;
 
-                // --- 核心優化：加入大拇指橫向展開判定，解鎖 5 根手指全部名稱的模式 ---
                 let extendedFingers = 0;
-                
-                // 大拇指判定：計算指尖與關節的橫向絕對間距
-                const thumbExtended = Math.abs(hand[4].x - hand[2].x) > 0.04;
-                if (thumbExtended) extendedFingers++;
-                
-                // 其餘四指判定
+                if (Math.abs(hand[4].x - hand[2].x) > 0.04) extendedFingers++;
                 if (checkFingerExtended(hand[8], hand[6])) extendedFingers++;
                 if (checkFingerExtended(hand[12], hand[10])) extendedFingers++;
                 if (checkFingerExtended(hand[16], hand[14])) extendedFingers++;
@@ -479,9 +446,7 @@
                     handleCharge(true);
                 } else {
                     if (state.isPinching) {
-                        if (state.chargeProgress >= 1) {
-                            triggerExplosion();
-                        }
+                        if (state.chargeProgress >= 1) triggerExplosion();
                         state.isPinching = false;
                     }
                     handleCharge(false);
@@ -498,17 +463,13 @@
                 chargeOverlay.classList.add('active');
             } else {
                 state.chargeProgress = Math.max(state.chargeProgress - 0.05, 0);
-                if (state.chargeProgress === 0) {
-                    chargeOverlay.classList.remove('active');
-                }
+                if (state.chargeProgress === 0) chargeOverlay.classList.remove('active');
             }
-            const offset = 439.8 - (state.chargeProgress * 439.8);
-            chargeBar.style.strokeDashoffset = offset;
+            chargeBar.style.strokeDashoffset = 439.8 - (state.chargeProgress * 439.8);
         }
 
         function triggerExplosion() {
-            state.isExploded = true;
-            state.explosionFactor = 1.0;
+            state.isExploded = true; state.explosionFactor = 1.0;
             statusGesture.innerText = `Active Mode: Singularity Discharge`;
             setTimeout(() => { state.isExploded = false; }, 1200);
         }
@@ -527,7 +488,6 @@
                 statusAudio.innerText = `Audio Responsive: Biological Active`;
                 initAudioBtn.style.display = 'none';
             } catch (err) {
-                console.error("Audio initialization failed:", err);
                 statusAudio.innerText = `Audio Responsive: Permission Denied`;
             }
         }
@@ -536,13 +496,13 @@
             state.bgVisible = !state.bgVisible;
             videoElement.classList.toggle('visible', state.bgVisible);
         });
-
         initAudioBtn.addEventListener('click', initAudio);
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight); // 同步更新後處理管線畫布大小
         });
 
         // --- Animation Loop ---
@@ -565,8 +525,8 @@
             
             if (state.colorIndex > 0 && state.colorIndex <= 5 && state.activeHandCount === 1 && !state.isPinching) {
                 state.textMorphFactor += (1.0 - state.textMorphFactor) * 0.08; 
-                particleSystem.rotation.x += (state.targetRotationX * 0.2 - particleSystem.rotation.x) * 0.05;
-                particleSystem.rotation.y += (state.targetRotationY * 0.2 - particleSystem.rotation.y) * 0.05;
+                particleSystem.rotation.x += (state.targetRotationX * 0.15 - particleSystem.rotation.x) * 0.05; // 稍微降低晃動系數，讓光暈字體更銳利易讀
+                particleSystem.rotation.y += (state.targetRotationY * 0.15 - particleSystem.rotation.y) * 0.05;
             } else {
                 state.textMorphFactor += (0.0 - state.textMorphFactor) * 0.08; 
                 particleSystem.rotation.x += (state.targetRotationX - particleSystem.rotation.x) * 0.05;
@@ -579,15 +539,21 @@
             
             if (state.isExploded) {
                 state.explosionFactor += delta * 4.0; 
+                bloomPass.strength = 3.5; // 新增：爆炸瞬間將輝光強度飆升到 3.5，製造炫目的衝擊波視覺
             } else {
                 state.explosionFactor += (0 - state.explosionFactor) * 0.08;
+                // 平時輝光隨音樂能量微幅呼吸震盪
+                let currentAudioEnergy = 0;
+                if (isAudioEnabled && audioData) {
+                    currentAudioEnergy = audioData[10] / 255; 
+                }
+                // 輝光基底 1.5 + 捏合充能進度 * 1.5 + 音樂鼓點能量 * 0.5
+                bloomPass.strength = 1.5 + (state.chargeProgress * 1.5) + (currentAudioEnergy * 0.5);
             }
 
             for (i = 0; i < PARTICLE_COUNT; i++) {
                 i3 = i * 3;
-                dx = originalDirections[i3];
-                dy = originalDirections[i3 + 1];
-                dz = originalDirections[i3 + 2];
+                dx = originalDirections[i3]; dy = originalDirections[i3 + 1]; dz = originalDirections[i3 + 2];
 
                 wave = Math.sin(time * 2.5 + phaseOffsets[i]) * 0.05;
                 freq = 0;
@@ -595,15 +561,10 @@
                     freqIndex = Math.floor((i / PARTICLE_COUNT) * audioData.length);
                     freq = audioData[freqIndex] / 255;
                 }
-                currentRadius = baseRadius + wave + (freq * 2.0);
+                currentRadius = baseRadius + wave + (freq * 1.8);
 
-                sphereX = dx * currentRadius;
-                sphereY = dy * currentRadius;
-                sphereZ = dz * currentRadius;
-
-                targetX = textTargets[i3];
-                targetY = textTargets[i3 + 1];
-                targetZ = textTargets[i3 + 2];
+                sphereX = dx * currentRadius; sphereY = dy * currentRadius; sphereZ = dz * currentRadius;
+                targetX = textTargets[i3]; targetY = textTargets[i3 + 1]; targetZ = textTargets[i3 + 2];
 
                 let finalX = THREE.MathUtils.lerp(sphereX, targetX, state.textMorphFactor);
                 let finalY = THREE.MathUtils.lerp(sphereY, targetY, state.textMorphFactor);
@@ -615,13 +576,13 @@
                     finalZ += dz * state.explosionFactor * randomSpeeds[i] * 10.0;
                 }
 
-                posAttr.array[i3] = finalX;
-                posAttr.array[i3 + 1] = finalY;
-                posAttr.array[i3 + 2] = finalZ;
+                posAttr.array[i3] = finalX; posAttr.array[i3 + 1] = finalY; posAttr.array[i3 + 2] = finalZ;
             }
             
             posAttr.needsUpdate = true;
-            renderer.render(scene, camera);
+            
+            // --- 核心修改：改用 composer.render() 代替原來的 renderer.render() 輸出畫面 ---
+            composer.render();
         }
 
         animate();
