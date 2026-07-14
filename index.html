@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Celestial Mechanics - Optimized Morphing Spectrum</title>
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --ui-color: rgba(255, 255, 255, 0.85);
+            --ui-bg: rgba(15, 15, 15, 0.6);
+            --accent: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+
+        #webcam-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+        }
+
+        #webcam-video.visible {
+            opacity: 0.25;
+        }
+
+        header {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-family: "Playfair Display", "Didot", "Georgia", serif;
+            font-weight: 400;
+            font-style: italic;
+            font-size: 2.2rem;
+            color: var(--ui-color);
+            letter-spacing: -0.5px;
+            line-height: 1.2;
+        }
+
+        .subtitle {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 8px;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 15px;
+        }
+
+        .btn {
+            background: var(--ui-bg);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--ui-color);
+            padding: 12px 24px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        .btn-audio {
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        .status-panel {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            z-index: 10;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.5);
+            font-family: monospace;
+            line-height: 1.8;
+            pointer-events: none;
+        }
+
+        #charge-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 5;
+            pointer-events: none;
+            width: 150px;
+            height: 150px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        #charge-overlay.active {
+            opacity: 1;
+        }
+
+        svg .bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.1);
+            stroke-width: 3;
+        }
+
+        svg .progress {
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 3;
+            stroke-dasharray: 439.8;
+            stroke-dashoffset: 439.8;
+            transform: rotate(-90deg);
+            transform-origin: center;
+            transition: stroke-dashoffset 0.1s linear;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: serif;
+            font-style: italic;
+            font-size: 1.5rem;
+            z-index: 100;
+            transition: opacity 0.5s;
+            pointer-events: none;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Montserrat:wght@500&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="loading">Initializing systems...</div>
+
+    <header>
+        <h1>Celestial Mechanics</h1>
+        <div class="subtitle">Kinetic Particle Study & Morphing Text Spectrum</div>
+    </header>
+
+    <div class="status-panel">
+        <div id="status-hands">Hands Detected: 0</div>
+        <div id="status-gesture">Active Mode: Idle</div>
+        <div id="status-color">Spectrum Mode: Default</div>
+        <div id="status-audio">Audio Responsive: Disabled</div>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-audio" id="init-audio-btn">Enable Audio Spectrum</button>
+        <button class="btn" id="toggle-bg-btn">Toggle Background</button>
+    </div>
+
+    <svg id="charge-overlay" viewBox="0 0 160 160">
+        <circle class="bg" cx="80" cy="80" r="70"></circle>
+        <circle class="progress" id="charge-bar" cx="80" cy="80" r="70"></circle>
+    </svg>
+
+    <video id="webcam-video" autoplay playsinline></video>
+    <div id="canvas-container"></div>
+
+    <script>
+        // --- 核心優化：調降粒子數至 3000，完美確保行動端 60FPS 的渲染流暢度 ---
+        const PARTICLE_COUNT = 3000; 
+        let baseRadius = 2.5;
+        let targetRadius = 2.5;
+        
+        const state = {
+            targetRotationX: 0,
+            targetRotationY: 0,
+            targetPositionX: 0,
+            targetPositionY: 0,
+            colorIndex: 5,
+            chargeProgress: 0,
+            isPinching: false,
+            isExploded: false,
+            explosionFactor: 0,
+            bgVisible: false,
+            textMorphFactor: 0,
+            activeHandCount: 0
+        };
+
+        const textLibrary = {
+            1: ["Allen"],
+            2: ["Jolie"],
+            3: ["Karis"],
+            4: ["Liesel"],
+            5: ["Allen", "Jolie", "Karis", "Liesel"] 
+        };
+
+        const colorPalette = [
+            0xff3b30, // 0 根手指：紅
+            0xff9500, // 1 根手指：橘
+            0xffcc00, // 2 根手指：黃
+            0x34c759, // 3 根手指：綠
+            0x007aff, // 4 根手指：藍
+            0xffffff  // 5 根手指：白
+        ];
+
+        let audioContext = null;
+        let analyser = null;
+        let audioData = null;
+        let isAudioEnabled = false;
+
+        const videoElement = document.getElementById('webcam-video');
+        const container = document.getElementById('canvas-container');
+        const toggleBgBtn = document.getElementById('toggle-bg-btn');
+        const initAudioBtn = document.getElementById('init-audio-btn');
+        const chargeOverlay = document.getElementById('charge-overlay');
+        const chargeBar = document.getElementById('charge-bar');
+        const loadingEl = document.getElementById('loading');
+        
+        const statusHands = document.getElementById('status-hands');
+        const statusGesture = document.getElementById('status-gesture');
+        const statusColor = document.getElementById('status-color');
+        const statusAudio = document.getElementById('status-audio');
+
+        // --- Three.js Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 7;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const originalDirections = new Float32Array(PARTICLE_COUNT * 3);
+        const textTargets = new Float32Array(PARTICLE_COUNT * 3); 
+        const randomSpeeds = new Float32Array(PARTICLE_COUNT);
+        const phaseOffsets = new Float32Array(PARTICLE_COUNT);
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const i3 = i * 3;
+            const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+            const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+
+            const x = Math.sin(phi) * Math.cos(theta);
+            const y = Math.sin(phi) * Math.sin(theta);
+            const z = Math.cos(phi);
+
+            originalDirections[i3] = x;
+            originalDirections[i3 + 1] = y;
+            originalDirections[i3 + 2] = z;
+
+            positions[i3] = x * baseRadius;
+            positions[i3 + 1] = y * baseRadius;
+            positions[i3 + 2] = z * baseRadius;
+
+            randomSpeeds[i] = 0.5 + Math.random() * 1.5;
+            phaseOffsets[i] = Math.random() * Math.PI * 2;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const material = new THREE.PointsMaterial({
+            color: colorPalette[state.colorIndex],
+            size: 0.04,
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const particleSystem = new THREE.Points(geometry, material);
+        scene.add(particleSystem);
+
+        // --- Canvas 文字矩陣生成器 ---
+        const textCanvas = document.createElement('canvas');
+        const textCtx = textCanvas.getContext('2d');
+        textCanvas.width = 512;
+        textCanvas.height = 512;
+
+        function updateTextMatrix(textArray) {
+            textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+            textCtx.fillStyle = '#ffffff';
+            textCtx.font = "bold 70px 'Montserrat', sans-serif";
+            textCtx.textAlign = "center";
+            textCtx.textBaseline = "middle";
+
+            if (textArray.length === 1) {
+                textCtx.fillText(textArray[0], 256, 256);
+            } else {
+                const step = 400 / (textArray.length + 1);
+                textArray.forEach((txt, index) => {
+                    textCtx.font = "bold 52px 'Montserrat', sans-serif";
+                    textCtx.fillText(txt, 256, 60 + step * (index + 1));
+                });
+            }
+
+            const imgData = textCtx.getImageData(0, 0, textCanvas.width, textCanvas.height).data;
+            const validPoints = [];
+
+            for (let y = 0; y < textCanvas.height; y += 4) {
+                for (let x = 0; x < textCanvas.width; x += 4) {
+                    const alphaIndex = (y * textCanvas.width + x) * 4 + 3;
+                    if (imgData[alphaIndex] > 128) {
+                        const mx = ((x / textCanvas.width) - 0.5) * 8.0;
+                        const my = (((textCanvas.height - y) / textCanvas.height) - 0.5) * 8.0; 
+                        validPoints.push({ x: mx, y: my });
+                    }
+                }
+            }
+
+            // --- 核心優化：隨機隨機亂數採樣，消除文字聚集時的條紋感與骨架重疊問題 ---
+            if (validPoints.length > 0) {
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const i3 = i * 3;
+                    // 改用隨機抽取像素點，讓粒子排布極度均勻且有機化
+                    const randIndex = Math.floor(Math.random() * validPoints.length);
+                    const pt = validPoints[randIndex];
+                    
+                    textTargets[i3] = pt.x;
+                    textTargets[i3 + 1] = pt.y;
+                    textTargets[i3 + 2] = (Math.random() - 0.5) * 0.2; 
+                }
+            }
+        }
+
+        // --- 核心優化：預先初始化文字緩衝區，防止首幀向中心 (0,0,0) 崩塌 ---
+        updateTextMatrix(textLibrary[5]);
+
+        // --- 核心優化：使用最穩定的全域 Hands 物件，提高跨 CDN 穩定度 ---
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults(onHandResults);
+
+        const cameraCtx = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        
+        cameraCtx.start().then(() => {
+            loadingEl.style.opacity = 0;
+        });
+
+        function getDistance(pt1, pt2) {
+            return Math.hypot(pt1.x - pt2.x, pt1.y - pt2.y, pt1.z - pt2.z);
+        }
+
+        function checkFingerExtended(tip, pip) {
+            return tip.y < pip.y; 
+        }
+
+        function onHandResults(results) {
+            const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+            statusHands.innerText = `Hands Detected: ${numHands}`;
+
+            if (numHands === 0) {
+                statusGesture.innerText = `Active Mode: Inertial Drift`;
+                state.isPinching = false;
+                state.activeHandCount = 0;
+                handleCharge(false);
+                return;
+            }
+
+            const landmarks = results.multiHandLandmarks;
+            state.activeHandCount = numHands;
+            
+            if (numHands === 2) {
+                statusGesture.innerText = `Active Mode: Bi-Manual Scale`;
+                state.isPinching = false;
+                handleCharge(false);
+
+                const h1_wrist = landmarks[0][0];
+                const h2_wrist = landmarks[1][0];
+                const distance = Math.hypot(h1_wrist.x - h2_wrist.x, h1_wrist.y - h2_wrist.y);
+                targetRadius = THREE.MathUtils.clamp(distance * 7.5, 1.0, 6.0);
+            } 
+            else if (numHands === 1) {
+                const hand = landmarks[0];
+                const anchor = hand[9]; 
+
+                state.targetPositionX = (anchor.x - 0.5) * -12; 
+                state.targetPositionY = (anchor.y - 0.5) * -8;
+                state.targetRotationY = (hand[17].x - hand[5].x) * -10;
+                state.targetRotationX = (hand[17].y - hand[5].y) * 10;
+
+                const thumbTip = hand[4];
+                const indexTip = hand[8];
+                const pinchDist = getDistance(thumbTip, indexTip);
+                const isPinchingNow = pinchDist < 0.045;
+
+                // --- 核心優化：加入大拇指橫向展開判定，解鎖 5 根手指全部名稱的模式 ---
+                let extendedFingers = 0;
+                
+                // 大拇指判定：計算指尖與關節的橫向絕對間距
+                const thumbExtended = Math.abs(hand[4].x - hand[2].x) > 0.04;
+                if (thumbExtended) extendedFingers++;
+                
+                // 其餘四指判定
+                if (checkFingerExtended(hand[8], hand[6])) extendedFingers++;
+                if (checkFingerExtended(hand[12], hand[10])) extendedFingers++;
+                if (checkFingerExtended(hand[16], hand[14])) extendedFingers++;
+                if (checkFingerExtended(hand[20], hand[18])) extendedFingers++;
+
+                if (extendedFingers !== state.colorIndex && !isPinchingNow) {
+                    state.colorIndex = THREE.MathUtils.clamp(extendedFingers, 0, 5);
+                    material.color.setHex(colorPalette[state.colorIndex]);
+                    
+                    if (extendedFingers === 0) {
+                        statusColor.innerText = `Spectrum Mode: Idle Focus`;
+                    } else {
+                        const currentNames = textLibrary[extendedFingers];
+                        statusColor.innerText = `Spectrum Mode: ${currentNames.join(' & ')}`;
+                        updateTextMatrix(currentNames);
+                    }
+                }
+
+                if (isPinchingNow) {
+                    state.isPinching = true;
+                    statusGesture.innerText = `Active Mode: Energy Pinch`;
+                    handleCharge(true);
+                } else {
+                    if (state.isPinching) {
+                        if (state.chargeProgress >= 1) {
+                            triggerExplosion();
+                        }
+                        state.isPinching = false;
+                    }
+                    handleCharge(false);
+                    if (!state.isExploded) {
+                        statusGesture.innerText = extendedFingers > 0 ? `Active Mode: Text Resonance` : `Active Mode: Precision Manipulation`;
+                    }
+                }
+            }
+        }
+
+        function handleCharge(charging) {
+            if (charging && !state.isExploded) {
+                state.chargeProgress = Math.min(state.chargeProgress + 0.025, 1);
+                chargeOverlay.classList.add('active');
+            } else {
+                state.chargeProgress = Math.max(state.chargeProgress - 0.05, 0);
+                if (state.chargeProgress === 0) {
+                    chargeOverlay.classList.remove('active');
+                }
+            }
+            const offset = 439.8 - (state.chargeProgress * 439.8);
+            chargeBar.style.strokeDashoffset = offset;
+        }
+
+        function triggerExplosion() {
+            state.isExploded = true;
+            state.explosionFactor = 1.0;
+            statusGesture.innerText = `Active Mode: Singularity Discharge`;
+            setTimeout(() => { state.isExploded = false; }, 1200);
+        }
+
+        async function initAudio() {
+            if (isAudioEnabled) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512; 
+                source.connect(analyser);
+                audioData = new Uint8Array(analyser.frequencyBinCount);
+                isAudioEnabled = true;
+                statusAudio.innerText = `Audio Responsive: Biological Active`;
+                initAudioBtn.style.display = 'none';
+            } catch (err) {
+                console.error("Audio initialization failed:", err);
+                statusAudio.innerText = `Audio Responsive: Permission Denied`;
+            }
+        }
+
+        toggleBgBtn.addEventListener('click', () => {
+            state.bgVisible = !state.bgVisible;
+            videoElement.classList.toggle('visible', state.bgVisible);
+        });
+
+        initAudioBtn.addEventListener('click', initAudio);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- Animation Loop ---
+        const clock = new THREE.Clock();
+        let delta, time, posAttr, i, i3, dx, dy, dz, wave, freq, freqIndex, currentRadius;
+        let sphereX, sphereY, sphereZ, targetX, targetY, targetZ;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            delta = clock.getDelta();
+            time = clock.getElapsedTime();
+
+            if (isAudioEnabled && analyser) {
+                analyser.getByteFrequencyData(audioData);
+            }
+
+            particleSystem.position.x += (state.targetPositionX - particleSystem.position.x) * 0.1;
+            particleSystem.position.y += (state.targetPositionY - particleSystem.position.y) * 0.1;
+            
+            if (state.colorIndex > 0 && state.colorIndex <= 5 && state.activeHandCount === 1 && !state.isPinching) {
+                state.textMorphFactor += (1.0 - state.textMorphFactor) * 0.08; 
+                particleSystem.rotation.x += (state.targetRotationX * 0.2 - particleSystem.rotation.x) * 0.05;
+                particleSystem.rotation.y += (state.targetRotationY * 0.2 - particleSystem.rotation.y) * 0.05;
+            } else {
+                state.textMorphFactor += (0.0 - state.textMorphFactor) * 0.08; 
+                particleSystem.rotation.x += (state.targetRotationX - particleSystem.rotation.x) * 0.05;
+                particleSystem.rotation.y += (state.targetRotationY - particleSystem.rotation.y) * 0.05;
+                particleSystem.rotation.y += 0.002; 
+            }
+
+            baseRadius += (targetRadius - baseRadius) * 0.1;
+            posAttr = geometry.attributes.position;
+            
+            if (state.isExploded) {
+                state.explosionFactor += delta * 4.0; 
+            } else {
+                state.explosionFactor += (0 - state.explosionFactor) * 0.08;
+            }
+
+            for (i = 0; i < PARTICLE_COUNT; i++) {
+                i3 = i * 3;
+                dx = originalDirections[i3];
+                dy = originalDirections[i3 + 1];
+                dz = originalDirections[i3 + 2];
+
+                wave = Math.sin(time * 2.5 + phaseOffsets[i]) * 0.05;
+                freq = 0;
+                if (isAudioEnabled && audioData) {
+                    freqIndex = Math.floor((i / PARTICLE_COUNT) * audioData.length);
+                    freq = audioData[freqIndex] / 255;
+                }
+                currentRadius = baseRadius + wave + (freq * 2.0);
+
+                sphereX = dx * currentRadius;
+                sphereY = dy * currentRadius;
+                sphereZ = dz * currentRadius;
+
+                targetX = textTargets[i3];
+                targetY = textTargets[i3 + 1];
+                targetZ = textTargets[i3 + 2];
+
+                let finalX = THREE.MathUtils.lerp(sphereX, targetX, state.textMorphFactor);
+                let finalY = THREE.MathUtils.lerp(sphereY, targetY, state.textMorphFactor);
+                let finalZ = THREE.MathUtils.lerp(sphereZ, targetZ, state.textMorphFactor);
+
+                if (state.explosionFactor > 0.01) {
+                    finalX += dx * state.explosionFactor * randomSpeeds[i] * 10.0;
+                    finalY += dy * state.explosionFactor * randomSpeeds[i] * 10.0;
+                    finalZ += dz * state.explosionFactor * randomSpeeds[i] * 10.0;
+                }
+
+                posAttr.array[i3] = finalX;
+                posAttr.array[i3 + 1] = finalY;
+                posAttr.array[i3 + 2] = finalZ;
+            }
+            
+            posAttr.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
